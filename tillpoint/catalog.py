@@ -33,13 +33,11 @@ class Catalog:
         self._cache.pop(sku, None)
 
     def get_product(self, sku):
-        product = self._cache.get(sku)
-        if product is None:
-            row = self.conn.execute("SELECT * FROM products WHERE sku = ?", (sku,)).fetchone()
-            if row is None:
-                raise UnknownProduct(sku)
-            product = Product(row["sku"], row["name"], row["price_cents"], row["stock"])
-            self._cache[sku] = product
+        row = self.conn.execute("SELECT * FROM products WHERE sku = ?", (sku,)).fetchone()
+        if row is None:
+            raise UnknownProduct(sku)
+        product = Product(row["sku"], row["name"], row["price_cents"], row["stock"])
+        self._cache[sku] = product
         return product
 
     def update_price(self, sku, price_cents):
@@ -52,11 +50,16 @@ class Catalog:
 
     def reserve(self, sku, qty):
         """Take qty units out of stock, or raise OutOfStock."""
-        product = self.get_product(sku)
-        if product.stock < qty:
-            raise OutOfStock(sku, qty, product.stock)
-        self.conn.execute("UPDATE products SET stock = stock - ? WHERE sku = ?", (qty, sku))
+        cur = self.conn.execute(
+            "UPDATE products SET stock = stock - ? WHERE sku = ? AND stock >= ?",
+            (qty, sku, qty),
+        )
         self._cache.pop(sku, None)
+        if cur.rowcount == 0:
+            row = self.conn.execute("SELECT stock FROM products WHERE sku = ?", (sku,)).fetchone()
+            if row is None:
+                raise UnknownProduct(sku)
+            raise OutOfStock(sku, qty, row["stock"])
 
     def release(self, sku, qty):
         """Put qty units back into stock."""

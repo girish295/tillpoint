@@ -40,6 +40,44 @@ class OrderDeskTest(unittest.TestCase):
             self.app.orders.create("ana", [("TEE", 4)])
         self.assertEqual(self.app.catalog.get_product("TEE").stock, 3)
 
+    def test_concurrent_workers_prevent_negative_stock(self):
+        import tempfile
+        import os
+        from tillpoint.catalog import Catalog
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+            db_path = f.name
+        conn1 = None
+        conn2 = None
+        try:
+            conn1 = db.connect(db_path)
+            conn2 = db.connect(db_path)
+            cat1 = Catalog(conn1)
+            cat2 = Catalog(conn2)
+
+            cat1.add_product("ITEM", "Item", 1000, stock=5)
+            # Both workers inspect the product
+            self.assertEqual(cat1.get_product("ITEM").stock, 5)
+            self.assertEqual(cat2.get_product("ITEM").stock, 5)
+
+            # Worker 1 reserves 4 units; DB stock becomes 1
+            cat1.reserve("ITEM", 4)
+            self.assertEqual(cat1.get_product("ITEM").stock, 1)
+
+            # Worker 2 tries to reserve 4 units (only 1 left in DB)
+            with self.assertRaises(OutOfStock):
+                cat2.reserve("ITEM", 4)
+
+            # Stock must remain 1, never negative
+            row = conn1.execute("SELECT stock FROM products WHERE sku = 'ITEM'").fetchone()
+            self.assertEqual(row["stock"], 1)
+        finally:
+            if conn1:
+                conn1.close()
+            if conn2:
+                conn2.close()
+            if os.path.exists(db_path):
+                os.remove(db_path)
+
     def test_payment_marks_order_paid(self):
         order = self.app.orders.create("ana", [("MUG", 1)])
         status, payload = self.app.handle("POST", "/webhooks/payments", {
