@@ -27,10 +27,17 @@ class Payments:
             "INSERT INTO payments (order_id, event_id, amount_cents, received_at) VALUES (?, ?, ?, ?)",
             (order["id"], event["id"], event["amount_cents"], db.to_iso(now or db.utcnow())),
         )
-        if order["status"] == "pending" and self.paid_cents(order["id"]) >= order["total_cents"]:
+        total_paid = self.paid_cents(order["id"])
+        current_status = order["status"]
+        if current_status == "pending" and total_paid == order["total_cents"]:
             self.conn.execute("UPDATE orders SET status = 'paid' WHERE id = ?", (order["id"],))
             return "paid"
-        return order["status"]
+        elif total_paid > order["total_cents"]:
+            if current_status != "shipped":
+                self.conn.execute("UPDATE orders SET status = 'overpaid' WHERE id = ?", (order["id"],))
+                return "overpaid"
+            return "shipped"
+        return current_status
 
     def paid_cents(self, order_id):
         row = self.conn.execute(

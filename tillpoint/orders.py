@@ -53,7 +53,7 @@ class Orders:
             raise OrderError("a shipped order cannot be cancelled")
         self.conn.execute("BEGIN IMMEDIATE")
         try:
-            if order["status"] in ("pending", "paid"):
+            if order["status"] in ("pending", "paid", "overpaid"):
                 for item in order["items"]:
                     self.catalog.release(item["sku"], item["qty"])
             if order["coupon"]:
@@ -67,7 +67,7 @@ class Orders:
 
     def ship(self, order_id):
         order = self.get(order_id)
-        if order["status"] != "paid":
+        if order["status"] not in ("paid", "overpaid"):
             raise OrderError("only a paid order can ship")
         self.conn.execute("UPDATE orders SET status = 'shipped' WHERE id = ?", (order_id,))
         return self.get(order_id)

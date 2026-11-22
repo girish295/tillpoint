@@ -27,7 +27,7 @@ def top_products(conn, limit=5):
     rows = conn.execute(
         "SELECT i.sku, SUM(i.qty) AS units, SUM(i.qty * i.unit_price_cents) AS gross_cents"
         " FROM order_items i JOIN orders o ON o.id = i.order_id"
-        " WHERE o.status IN ('paid', 'shipped') GROUP BY i.sku ORDER BY units DESC, i.sku LIMIT ?",
+        " WHERE o.status IN ('paid', 'shipped', 'overpaid') GROUP BY i.sku ORDER BY units DESC, i.sku LIMIT ?",
         (limit,),
     ).fetchall()
     return [dict(r) for r in rows]

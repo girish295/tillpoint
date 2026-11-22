@@ -84,6 +84,43 @@ class OrderDeskTest(unittest.TestCase):
             "id": "evt_1", "type": "payment.succeeded", "order_id": order["id"], "amount_cents": 1200})
         self.assertEqual((status, payload["status"]), (200, "paid"))
 
+    def test_genuine_double_payment_flags_overpaid_and_preserves_shipped(self):
+        # Scenario 1: Customer pays twice for a normal order
+        order = self.app.orders.create("ana", [("MUG", 1)])
+        self.assertEqual(order["total_cents"], 1200)
+
+        # First payment: marks paid
+        s1, p1 = self.app.handle("POST", "/webhooks/payments", {
+            "id": "evt_pay_1", "type": "payment.succeeded", "order_id": order["id"], "amount_cents": 1200})
+        self.assertEqual((s1, p1["status"]), (200, "paid"))
+
+        # Second genuine payment with different event ID
+        s2, p2 = self.app.handle("POST", "/webhooks/payments", {
+            "id": "evt_pay_2", "type": "payment.succeeded", "order_id": order["id"], "amount_cents": 1200})
+        self.assertEqual((s2, p2["status"]), (200, "overpaid"))
+        self.assertEqual(self.app.payments.paid_cents(order["id"]), 2400)
+        self.assertEqual(self.app.orders.get(order["id"])["status"], "overpaid")
+
+        # Warehouse can still ship an overpaid order
+        shipped = self.app.orders.ship(order["id"])
+        self.assertEqual(shipped["status"], "shipped")
+
+        # Scenario 2: Second payment arrives after the order was already shipped
+        order2 = self.app.orders.create("bob", [("MUG", 1)])
+        self.app.handle("POST", "/webhooks/payments", {
+            "id": "evt_pay_3", "type": "payment.succeeded", "order_id": order2["id"], "amount_cents": 1200})
+        self.app.orders.ship(order2["id"])
+        self.assertEqual(self.app.orders.get(order2["id"])["status"], "shipped")
+
+        # Second payment arrives now
+        s3, p3 = self.app.handle("POST", "/webhooks/payments", {
+            "id": "evt_pay_4", "type": "payment.succeeded", "order_id": order2["id"], "amount_cents": 1200})
+        self.assertEqual(s3, 200)
+        # Fulfillment status must NOT be overwritten from shipped!
+        self.assertEqual(p3["status"], "shipped")
+        self.assertEqual(self.app.orders.get(order2["id"])["status"], "shipped")
+        self.assertEqual(self.app.payments.paid_cents(order2["id"]), 2400)
+
     def test_duplicate_payment_webhook_is_idempotent(self):
         order = self.app.orders.create("ana", [("MUG", 1)])
         status1, payload1 = self.app.handle("POST", "/webhooks/payments", {
