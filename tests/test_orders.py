@@ -26,6 +26,15 @@ class OrderDeskTest(unittest.TestCase):
         self.assertEqual(order["discount_cents"], 120)
         self.assertEqual(order["total_cents"], 1080)
 
+    def test_coupon_with_tax_calculates_tax_after_discount(self):
+        # 1 MUG @ 1200, coupon TEN (10% = 120), CA tax (725 bps = 7.25%)
+        # Taxable amount must be 1080 cents. Tax = round_half_up(1080 * 725, 10000) = 78 cents.
+        order = self.app.orders.create("charlie", [("MUG", 1)], region="CA", coupon_code="TEN")
+        self.assertEqual(order["subtotal_cents"], 1200)
+        self.assertEqual(order["discount_cents"], 120)
+        self.assertEqual(order["tax_cents"], 78)
+        self.assertEqual(order["total_cents"], 1158)
+
     def test_out_of_stock(self):
         with self.assertRaises(OutOfStock):
             self.app.orders.create("ana", [("TEE", 4)])

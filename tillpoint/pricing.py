@@ -41,8 +41,9 @@ def round_half_up(numerator, denominator):
 def price_order(lines, region, coupon=None):
     """Return dict(subtotal_cents, discount_cents, tax_cents, total_cents)."""
     sub = subtotal(lines)
-    tax = tax_for(sub, region)
     discount = discount_for(coupon, sub)
+    taxable = max(0, sub - discount)
+    tax = tax_for(taxable, region)
     return {
         "subtotal_cents": sub,
         "discount_cents": discount,
