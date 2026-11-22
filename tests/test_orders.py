@@ -37,6 +37,22 @@ class OrderDeskTest(unittest.TestCase):
             "id": "evt_1", "type": "payment.succeeded", "order_id": order["id"], "amount_cents": 1200})
         self.assertEqual((status, payload["status"]), (200, "paid"))
 
+    def test_duplicate_payment_webhook_is_idempotent(self):
+        order = self.app.orders.create("ana", [("MUG", 1)])
+        status1, payload1 = self.app.handle("POST", "/webhooks/payments", {
+            "id": "evt_dup_1", "type": "payment.succeeded", "order_id": order["id"], "amount_cents": 1200})
+        self.assertEqual((status1, payload1["status"]), (200, "paid"))
+        self.assertEqual(self.app.payments.paid_cents(order["id"]), 1200)
+
+        # Webhook retry with the exact same event id
+        status2, payload2 = self.app.handle("POST", "/webhooks/payments", {
+            "id": "evt_dup_1", "type": "payment.succeeded", "order_id": order["id"], "amount_cents": 1200})
+        self.assertEqual((status2, payload2["status"]), (200, "paid"))
+        self.assertEqual(self.app.payments.paid_cents(order["id"]), 1200)
+
+        rows = self.conn.execute("SELECT * FROM payments WHERE event_id = 'evt_dup_1'").fetchall()
+        self.assertEqual(len(rows), 1)
+
     def test_cancel_paid_order_restocks(self):
         order = self.app.orders.create("ana", [("TEE", 2)])
         self.app.payments.handle_event(

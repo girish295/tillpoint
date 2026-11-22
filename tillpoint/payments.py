@@ -14,6 +14,10 @@ class Payments:
         """event: dict(id, type, order_id, amount_cents). Returns the order's status after the event."""
         if event.get("type") != "payment.succeeded":
             return None
+        existing = self.conn.execute("SELECT * FROM payments WHERE event_id = ?", (event["id"],)).fetchone()
+        if existing is not None:
+            order = self.conn.execute("SELECT status FROM orders WHERE id = ?", (existing["order_id"],)).fetchone()
+            return order["status"] if order else None
         order = self.conn.execute("SELECT * FROM orders WHERE id = ?", (event["order_id"],)).fetchone()
         if order is None:
             raise PaymentError(f"payment for unknown order {event['order_id']}")
