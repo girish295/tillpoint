@@ -14,6 +14,9 @@ class OrderDeskTest(unittest.TestCase):
         self.app.catalog.add_product("TEE", "T-shirt", 2500, stock=3)
         self.conn.execute("INSERT INTO coupons (code, kind, value) VALUES ('TEN', 'percent', 10)")
 
+    def tearDown(self):
+        self.conn.close()
+
     def test_order_totals_with_tax(self):
         order = self.app.orders.create("ana", [("MUG", 2), ("TEE", 1)], region="CA")
         self.assertEqual(order["subtotal_cents"], 4900)
