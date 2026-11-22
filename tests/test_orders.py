@@ -89,6 +89,35 @@ class OrderDeskTest(unittest.TestCase):
         self.assertEqual(reports.daily_sales(self.conn, "2025-03-10"),
                          {"day": "2025-03-10", "revenue_cents": 1200, "orders": 1})
 
+    def test_india_morning_sales_in_correct_day_report(self):
+        # India is UTC+5:30 (+330 minutes)
+        # 7:30 AM on March 10, 2025 in India is 02:00 AM UTC on March 10, 2025
+        order = self.app.orders.create("deepa", [("MUG", 1)])
+        india_morning_utc = datetime(2025, 3, 10, 2, 0, tzinfo=timezone.utc)
+        self.app.payments.handle_event(
+            {"id": "evt_india_1", "type": "payment.succeeded", "order_id": order["id"], "amount_cents": 1200},
+            now=india_morning_utc,
+        )
+
+        # Bounds test
+        start, end = reports.day_bounds_utc("2025-03-10", utc_offset_minutes=330)
+        self.assertEqual(start, "2025-03-09T18:30:00Z")
+        self.assertEqual(end, "2025-03-10T18:30:00Z")
+
+        # Sales report for March 10 in India must include the morning sale
+        res_mar10 = reports.daily_sales(self.conn, "2025-03-10", utc_offset_minutes=330)
+        self.assertEqual(res_mar10["revenue_cents"], 1200)
+        self.assertEqual(res_mar10["orders"], 1)
+
+        # Sales report for March 9 in India must NOT include it
+        res_mar9 = reports.daily_sales(self.conn, "2025-03-09", utc_offset_minutes=330)
+        self.assertEqual(res_mar9["revenue_cents"], 0)
+
+        # Also test negative offset (e.g. New York UTC-5 = -300 minutes)
+        ny_start, ny_end = reports.day_bounds_utc("2025-03-10", utc_offset_minutes=-300)
+        self.assertEqual(ny_start, "2025-03-10T05:00:00Z")
+        self.assertEqual(ny_end, "2025-03-11T05:00:00Z")
+
     def test_price_change(self):
         self.app.handle("PUT", "/products/MUG", {"price_cents": 1500})
         self.assertEqual(self.app.catalog.get_product("MUG").price_cents, 1500)
